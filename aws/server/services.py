@@ -1,36 +1,32 @@
-import dns.resolver
-import logging
 from os import environ
 from random import choice
+import logging
+import dns.resolver
 import requests
 from requests_kerberos import HTTPKerberosAuth
 from treadmill.infra import connection
-from pprint import pprint
 
 _LOGGER = logging.getLogger(__name__)
 _KERBEROS_AUTH = HTTPKerberosAuth()
 
 API_VERSION = '2.28'
 
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter("%(message)s"))
-_LOGGER.addHandler(console_handler)
-
 
 class IPAClient():
     ''' Interfaces with freeIPA API to register and deregister hosts '''
-    
+
     def __init__(self):
         self.cell_name = environ.get('TREADMILL_CELL')
         self.domain = environ.get('TREADMILL_DNS_DOMAIN')
         self.ipa_cert_location = '/etc/ipa/ca.crt'
+
         # Strip trailing period as it breaks SSL
         self.ipa_server_hostn = self.get_ipa_server_from_dns(self.domain)[:-1]
         self.ipa_srv_address = 'https://{}/ipa'.format(self.ipa_server_hostn)
         self.ipa_srv_api_address = '{}/session/json'.format(
             self.ipa_srv_address)
         self.referer = {'referer': self.ipa_srv_address}
-        
+
     def get_ipa_server_from_dns(self, tm_dns_domain):
         ''' Looks up random IPA server from DNS SRV records '''
         raw_results = [
@@ -39,7 +35,7 @@ class IPAClient():
                                'SRV')
             ]
         return choice(raw_results).split()[-1]
-        
+
     def _post(self, payload=None, auth=_KERBEROS_AUTH):
         ''' Submits formatted JSON to IPA server.
             Uses requests_kerberos module for Kerberos authentication with IPA.
@@ -50,9 +46,9 @@ class IPAClient():
                                  headers=self.referer,
                                  verify=self.ipa_cert_location)
         return response
-        
+
     def enroll_ipa_host(self, hostname):
-        ''' Add new host to IPA server'''
+        ''' Register new host with IPA server '''
         payload = {'method': 'host_add',
                    'params': [[hostname],
                               {'force': True,
@@ -62,51 +58,35 @@ class IPAClient():
                               ],
                    'id': 0}
         r = self._post(payload)
-        try:
-            return r.json()
-        except Exception as e:
-            _LOGGER.error(r, str(e))
-            
+        if r.json()['error']:
+            raise KeyError(r.json()['error']['message'])
+        return r.json()
+
     def unenroll_ipa_host(self, hostname):
-        ''' Delete host from IPA server'''
+        ''' Unregister host from IPA server '''
         payload = {'method': 'host_del',
                    'params': [[hostname],
-                              {'version': API_VERSION
+                              {'updatedns': True,
+                               'version': API_VERSION
                                }
                               ],
                    'id': 0}
         r = self._post(payload)
-        try:
-            if r.json()['error']:
-                raise  
-        except Exception as e:
-            _LOGGER.error(r, str(e))
-            
-    def get_ipa_hosts(self):
-        ''' Retrieve all host records from IPA server '''
+        if r.json()['error']:
+            raise KeyError(r.json()['error']['message'])
+        return r.json()
+
+    def get_ipa_hosts(self, hostname=''):
+        ''' Retrieve host records from IPA server '''
         payload = {'method': 'host_find',
-                   'params': [[''],
+                   'params': [[hostname],
                               {'version': API_VERSION}
                               ],
                    'id': 0}
         r = self._post(payload)
-        try:
-            return r.json()
-        except Exception as e:
-            _LOGGER.error(r, str(e))
-
-    def get_ipa_host(self, hostname):
-        ''' Retrieve host record from IPA server '''
-        payload = {'method': 'host_find',
-                   'params': [[hostname],
-                              {'version': API_VERSION},
-                              ],
-                   'id': 0}
-        r = self._post(payload)
-        try:
-            return r.json()
-        except Exception as e:
-            _LOGGER.error(r, str(e))
+        if r.json()['error']:
+            raise KeyError(r.json()['error']['message'])
+        return r.json()
 
 
 class AWSClient():
@@ -115,10 +95,31 @@ class AWSClient():
     def __init__(self):
         self.ec2_conn = connection.Connection()
 
+    def sanitize_manifest(self, manifest):
+        ''' Standardize manifest variables '''
+        if manifest['fqdn']:
+            manifest['fqdn'] = manifest['fqdn'].lower()
+
+        if manifest['role']:
+            manifest['role'] = manifest['role'].upper()
+
+        return manifest
+
+    def build_tags(self, manifest):
+        ''' Create list of AWS tags from manifest '''
+        tags = [{'Key': 'Name', 'Value': manifest['fqdn']},
+                {'Key': 'Role', 'Value': manifest['role']},
+                ]
+        return [{'ResourceType': 'instance', 'Tags': tags}]
+
     def create_instance(self, manifest):
-        ''' Add new instance to AWS using properties in manifest '''
+        ''' Add new instance to AWS using properties from manifest '''
+        manifest = self.sanitize_manifest(manifest)
+        tags = self.build_tags(manifest)
         user_data = self.render_manifest(manifest)
-        _instances = self.ec2_conn.run_instances(
+
+        self.ec2_conn.run_instances(
+            TagSpecifications=tags,
             ImageId=manifest['image_id'],
             MinCount=manifest['count'],
             MaxCount=manifest['count'],
@@ -131,20 +132,24 @@ class AWSClient():
                 'Groups': [manifest['secgroup_ids']]
             }],
         )
-        _LOGGER.info('New instances: {}'.format(pprint(_instances)))
 
     def delete_instance(self, hostname):
-        ''' Delete host from IPA server'''
-        instances = self.get_instance_by_hostname(hostname)
-        for instance in instances:
-            _LOGGER.info('Delete {}'.format(instance['InstanceId']))
+        ''' Delete instances matching hostname from AWS '''
+        instances = self.get_instances_by_hostname(hostname)
 
-    def get_instance_by_hostname(self, hostname):
-        ''' Get host details from AWS
-            Returns list of instances that match hostname
+        for instance in instances:
+            self.ec2_conn.terminate_instances(
+                InstanceIds=[instance['InstanceId']],
+                DryRun=False
+                )
+
+    def get_instances_by_hostname(self, hostname):
+        ''' Returns list of AWS instances that match hostname
             AWS returns instances in nested list- flatten to simple list
         '''
-        filters = [{'Name': 'tag:Name', 'Values': [hostname]}]
+        filters = [{'Name': 'tag:Name', 'Values': [hostname]},
+                   {'Name': 'instance-state-name', 'Values': ['running']},
+                   ]
         reservations = [
             x['Instances'] for x in
             self.ec2_conn.describe_instances(Filters=filters)['Reservations']
@@ -154,18 +159,23 @@ class AWSClient():
                 for result in reservation]
 
     def render_manifest(self, manifest):
-        template = '''#!/bin/bash \nhostnamectl set-hostname {fqdn}\n 
-yum install -y ipa-client-install\n
-ipa-client-install \
---server={fqdn} \
---domain={domain} \ 
---realm={realm}  \
---password='{otp}'\
---mkhomedir \
---no-ntp \
---unattended'''.format(fqdn=manifest['fqdn'],
-                       domain=manifest['domain'],
-                       realm=manifest['realm'],
-                       otp=manifest['otp'],
-                       )
+        ''' Stub function to supply instance user_data during testing.
+        '''
+        template = '''#!/bin/bash
+        hostnamectl set-hostname {fqdn}
+        echo "export http_proxy=http://proxy.ms-aws-dev.ms.com:3128/" \
+            >> /etc/profile.d/http_proxy.sh
+        echo "export NO_PROXY=localhost,169.254.169.254,*.ms-aws-dev.ms.com" \
+            >> /etc/profile.d/http_proxy.sh
+        echo "proxy=http://proxy.ms-aws-dev.ms.com:3128" >> /etc/yum.conf
+        yum install -y ipa-client
+        ipa-client-install \
+        --no-krb5-offline-password \
+        --enable-dns-updates \
+        --password='{otp}' \
+        --mkhomedir \
+        --no-ntp \
+        --unattended'''.format(fqdn=manifest['fqdn'],
+                               otp=manifest['otp'],
+                               )
         return template
