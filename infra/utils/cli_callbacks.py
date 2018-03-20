@@ -53,7 +53,7 @@ def validate_domain(ctx, param, value):
 def validate_hostname(ctx, param, value):
     """Cloud hostname validation"""
 
-    if not value.startswith("infra") or not value[-4:].isdigit() or len(value) != 8:
+    if not value.startswith("infra") or not value[-4:].isdigit() or len(value) != 9:
         raise click.BadParameter('Valid hostname convention is infraxxxx where x is a digit')
 
     return value
