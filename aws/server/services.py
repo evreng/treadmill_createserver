@@ -163,9 +163,9 @@ class AWSClient():
         '''
         template = '''#!/bin/bash
         hostnamectl set-hostname {fqdn}
-        echo "export http_proxy=http://proxy.{proxy-domain}:3128/" \
+        echo "export http_proxy=http://proxy.{proxydomain}:3128/" \
             >> /etc/profile.d/http_proxy.sh
-        echo "export NO_PROXY=localhost,169.254.169.254,*.{proxy-domain}" \
+        echo "export NO_PROXY=localhost,169.254.169.254,*.{proxydomain}" \
             >> /etc/profile.d/http_proxy.sh
         echo "proxy=http://proxy.{proxy-domain}:3128" >> /etc/yum.conf
         yum install -y ipa-client
@@ -177,6 +177,6 @@ class AWSClient():
         --no-ntp \
         --unattended'''.format(fqdn=manifest['fqdn'],
                                otp=manifest['otp'],
-                               proxy-domain=manifest['proxy-domain']
+                               proxydomain=manifest['proxydomain']
                                )
         return template
