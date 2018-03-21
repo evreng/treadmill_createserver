@@ -15,3 +15,6 @@ class HostManager():
     def deleteHost(self, hostname):
         self.ipaclient.unenroll_ipa_host(hostname)
         self.awsclient.delete_instance(hostname)
+
+    def getHost(self, hostname=None):
+        return self.ipaclient.get_ipa_hosts(hostname)
