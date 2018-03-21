@@ -120,6 +120,9 @@ server = treadmill.formatter.tablefmt:ServerPrettyFormatter
 server-node = treadmill.formatter.tablefmt:ServerNodePrettyFormatter
 tenant = treadmill.formatter.tablefmt:TenantPrettyFormatter
 
+[treadmill.aws.manager]
+manager=treadmill.aws.manager
+
 
 [treadmill.cli]
 admin = treadmill.cli.admin
