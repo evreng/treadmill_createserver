@@ -38,3 +38,4 @@ def init(authorizer):
     api = API()
     #return authz.wrap(api, authorizer)
     return api
+

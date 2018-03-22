@@ -16,7 +16,6 @@ class IPAClient():
     ''' Interfaces with freeIPA API to register and deregister hosts '''
 
     def __init__(self):
-        self.cell_name = environ.get('TREADMILL_CELL')
         self.domain = environ.get('TREADMILL_DNS_DOMAIN')
         self.ipa_cert_location = '/etc/ipa/ca.crt'
 
@@ -86,11 +85,17 @@ class IPAClient():
         r = self._post(payload)
         if r.json()['error']:
             raise KeyError(r.json()['error']['message'])
-        return r.json()['result']['result']
+
+        # Return flat list of FQDN results
+        return [result
+                for hosts in r.json()['result']['result']
+                for result in hosts['fqdn']]
 
 
 class AWSClient():
-    ''' Interfaces with TM AWS connection '''
+    ''' Interfaces with AWS connection to
+        Requires user has AWS credentials with EC2 permissions present in env
+    '''
 
     def __init__(self):
         self.ec2_conn = connection.Connection()
