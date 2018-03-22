@@ -10,17 +10,18 @@ class API(object):
         def list_servers(hostname=""):
             return host_manager.getHost(hostname)
 
-        def create_server(name, domain, ami, subnet, proxy, secgroup, size="t2.micro", key="tm-internal", role="Node", count=1):
+        def create_server(ami, count=1, size="t2.micro",
+                          secgroup, domain, subnet,
+                          key="tm-internal", role="node"):
             host_manager.createHost(
                 {'image_id': ami,
                  'count': count,
                  'instance_type': size,
                  'secgroup_ids': secgroup,
-                 'fqdn': '{}.{}'.format(name, domain),
-                 'cell': subnet,
+                 'domain': domain,
+                 'subnet_id': subnet,
                  'key': key,
                  'role': role,
-                 'proxy': proxy
                  }
             )
 

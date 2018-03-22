@@ -76,17 +76,17 @@ class IPAClient():
             raise KeyError(r.json()['error']['message'])
         return r.json()
 
-    def get_ipa_hosts(self, hostname=''):
+    def get_ipa_hosts(self, pattern=''):
         ''' Retrieve host records from IPA server '''
         payload = {'method': 'host_find',
-                   'params': [[hostname],
+                   'params': [[pattern],
                               {'version': API_VERSION}
                               ],
                    'id': 0}
         r = self._post(payload)
         if r.json()['error']:
             raise KeyError(r.json()['error']['message'])
-        return r.json()
+        return r.json()['result']['result']
 
 
 class AWSClient():
@@ -97,8 +97,8 @@ class AWSClient():
 
     def sanitize_manifest(self, manifest):
         ''' Standardize manifest variables '''
-        if manifest['fqdn']:
-            manifest['fqdn'] = manifest['fqdn'].lower()
+        if manifest['hostname']:
+            manifest['hostname'] = manifest['hostname'].lower()
 
         if manifest['role']:
             manifest['role'] = manifest['role'].upper()
@@ -107,7 +107,7 @@ class AWSClient():
 
     def build_tags(self, manifest):
         ''' Create list of AWS tags from manifest '''
-        tags = [{'Key': 'Name', 'Value': manifest['fqdn']},
+        tags = [{'Key': 'Name', 'Value': manifest['hostname']},
                 {'Key': 'Role', 'Value': manifest['role']},
                 ]
         return [{'ResourceType': 'instance', 'Tags': tags}]
@@ -121,8 +121,8 @@ class AWSClient():
         self.ec2_conn.run_instances(
             TagSpecifications=tags,
             ImageId=manifest['image_id'],
-            MinCount=manifest['count'],
-            MaxCount=manifest['count'],
+            MinCount=1,
+            MaxCount=1,
             InstanceType=manifest['instance_type'],
             KeyName=manifest['key'],
             UserData=user_data,
@@ -162,12 +162,12 @@ class AWSClient():
         ''' Stub function to supply instance user_data during testing.
         '''
         template = '''#!/bin/bash
-        hostnamectl set-hostname {fqdn}
-        echo "export http_proxy=http://proxy.{proxy}:3128/" \
+        hostnamectl set-hostname {hostname}
+        echo "export http_proxy=http://proxy.ms-aws-dev.ms.com:3128/" \
             >> /etc/profile.d/http_proxy.sh
-        echo "export NO_PROXY=localhost,169.254.169.254,*.{proxydomain}" \
+        echo "export NO_PROXY=localhost,169.254.169.254,*.ms-aws-dev.ms.com" \
             >> /etc/profile.d/http_proxy.sh
-        echo "proxy=http://proxy.{proxy}:3128" >> /etc/yum.conf
+        echo "proxy=http://proxy.ms-aws-dev.ms.com:3128" >> /etc/yum.conf
         yum install -y ipa-client
         ipa-client-install \
         --no-krb5-offline-password \
@@ -175,8 +175,8 @@ class AWSClient():
         --password='{otp}' \
         --mkhomedir \
         --no-ntp \
-        --unattended'''.format(fqdn=manifest['fqdn'],
+        --unattended'''.format(hostname=manifest['hostname'],
                                otp=manifest['otp'],
-                               proxydomain=manifest['proxy']
                                )
         return template
+
