@@ -42,10 +42,11 @@ def init():
     @click.option('--role', default="Node", help='Instance role')
     @click.option('--count', default=1, type=int, help='Number of instances')
     @click.option('--size', default='t2.micro', help='Instance EC2 size')
+    @click.option('--proxy', help='TEMP configuration')
     @click.pass_context
     @cli.ON_CLI_EXCEPTIONS
     def create_host(ctx, name, region, subnet, secgroup,
-                    ami, key, role, count, size):
+                    ami, key, role, count, size, proxy):
         """Configure Treadmill Host"""
         domain = ctx.obj['DOMAIN']
         manager = ctx.obj['host_manager']
@@ -63,7 +64,8 @@ def init():
              'fqdn': '{}.{}'.format(name, domain),
              'cell': subnet,
              'key': key,
-             'role': role
+             'role': role,
+             'proxy': proxy
              }
         )
 
