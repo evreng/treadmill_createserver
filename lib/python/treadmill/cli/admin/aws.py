@@ -1,11 +1,9 @@
-import os
 import click
 from pprint import pprint
 import logging
 
 from treadmill.infra import connection
 from treadmill.infra.utils import cli_callbacks
-from treadmill.infra.utils import security_group
 from treadmill import cli
 from treadmill.aws.manager import HostManager
 
@@ -34,18 +32,21 @@ def init():
         """Configure EC2 Objects"""
 
     @host.command(name='create')
-    @click.option('--name', required=True, help='FQDN name', callback=cli_callbacks.validate_hostname)
-    @click.option('--region', help='Region for the instance')
-    @click.option('--subnet', help='instance subnet-id')
-    @click.option('--security-group', help='instance security group')
-    @click.option('--ami', help='instance ami-id')
-    @click.option('--key', default="tm-internal", help='instance SSH key name')
-    @click.option('--role', default="Node", help='instance role name')
-    @click.option('--count', default=1, type=int, help='number of instances')
-    @click.option('--size', default='t2.micro', help='instance type')
+    @click.option('--name', required=True,
+                  callback=cli_callbacks.validate_hostname, help='FQDN name')
+    @click.option('--region', help='AWS Region')
+    @click.option('--subnet', help='Subnet ID/Treadmill cell name')
+    @click.option('--secgroup', help='Instance security group ID')
+    @click.option('--ami', help='AMI image ID')
+    @click.option('--key', default="tm-internal", help='Instance SSH key name')
+    @click.option('--role', default="Node", help='Instance role')
+    @click.option('--count', default=1, type=int, help='Number of instances')
+    @click.option('--size', default='t2.micro', help='Instance EC2 size')
+    @click.option('--proxy', help='TEMP configuration')
     @click.pass_context
     @cli.ON_CLI_EXCEPTIONS
-    def create_host(ctx, name, region, subnet, ami, key, role, count, size):
+    def create_host(ctx, name, region, subnet, secgroup,
+                    ami, key, role, count, size, proxy):
         """Configure Treadmill Host"""
         domain = ctx.obj['DOMAIN']
         manager = ctx.obj['host_manager']
@@ -57,14 +58,15 @@ def init():
 
         manager.createHost(
             {'image_id': ami,
-            'count': count,
-            'instance_type': size,
-            'secgroup_ids': security_group,
-            'fqdn': '{}.{}'.format(name, domain),
-            'cell': subnet,
-            'key': key,
-            'role': role
-            }
+             'count': count,
+             'instance_type': size,
+             'secgroup_ids': secgroup,
+             'fqdn': '{}.{}'.format(name, domain),
+             'cell': subnet,
+             'key': key,
+             'role': role,
+             'proxy': proxy
+             }
         )
 
     @host.command(name='delete')
@@ -75,19 +77,20 @@ def init():
     def delete_host(ctx, hostname, force):
         manager = ctx.obj['host_manager']
         if not force:
-            click.confirm("Are you sure you want to terminate {}? [yes/NO]: ".format(hostname), abort=True)
+            click.confirm("Are you sure you want to terminate {}? [yes/NO]: "
+                          .format(hostname), abort=True
+                          )
         manager.deleteHost(hostname)
 
-
     @host.command(name='list')
-    @click.option('--hostname', required=True, help='FQDN name')
+    @click.option('--hostname', help='FQDN name')
     @click.pass_context
     @cli.ON_CLI_EXCEPTIONS
     def get_host(ctx, hostname):
         manager = ctx.obj['host_manager']
-        click.echo(
-            pprint(manager.awsclient.get_instances_by_hostname(hostname))
-        )
-
+        if hostname:
+            click.echo(pprint(manager.findHost(hostname)))
+        else:
+            click.echo(pprint(manager.findHost()))
 
     return aws
